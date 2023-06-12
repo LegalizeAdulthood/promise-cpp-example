@@ -1,0 +1,10 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg/master/scripts/vcpkg.schema.json",
+  "name": "promises-a-plus-example",
+  "version": "1.0.0",
+  "dependencies": [
+    "gtest",
+    "promise-cpp",
+    "rapidjson"
+  ]
+}
