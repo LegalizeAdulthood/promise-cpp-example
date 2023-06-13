@@ -1,5 +1,9 @@
 include(FindPackageHandleStandardArgs)
 
+if(TARGET boost::beast)
+    return()
+endif()
+
 find_package(Boost)
 if(Boost_FOUND)
     find_path(Boost_Beast_FOUND boost/beast.hpp PATHS ${Boost_INCLUDE_DIRS})
