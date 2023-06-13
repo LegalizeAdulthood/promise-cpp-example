@@ -1,3 +1,5 @@
+find_package(RapidJSON CONFIG REQUIRED)
+
 # Application logic
 add_library(comicsdb
   comicsdb.h

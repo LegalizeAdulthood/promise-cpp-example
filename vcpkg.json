@@ -3,6 +3,7 @@
   "name": "promises-a-plus-example",
   "version": "1.0.0",
   "dependencies": [
+    "boost-beast",
     "gtest",
     "promise-cpp",
     "rapidjson"
