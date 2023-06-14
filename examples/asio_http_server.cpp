@@ -379,9 +379,9 @@ int main(int argc, char* argv[])
     if (argc != 5)
     {
         std::cerr <<
-            "Usage: http-server-coro <address> <port> <doc_root> <threads>\n" <<
+            "Usage: " << argv[0] << " <address> <port> <doc_root> <threads>\n" <<
             "Example:\n" <<
-            "    http-server-coro 0.0.0.0 8080 . 1\n";
+            "    " << argv[0] << " 0.0.0.0 8080 . 1\n";
         return EXIT_FAILURE;
     }
     auto const address = ip::make_address(argv[1]);
@@ -400,7 +400,7 @@ int main(int argc, char* argv[])
     // Run the I/O service on the requested number of threads
     std::vector<std::thread> v;
     v.reserve(threads - 1);
-    for(auto i = threads - 1; i > 0; --i)
+    for(int i = threads - 1; i > 0; --i)
         v.emplace_back(
         [&ioc]
         {
