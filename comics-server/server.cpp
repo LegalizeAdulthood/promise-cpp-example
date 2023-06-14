@@ -33,12 +33,10 @@ struct Session
         socket_(std::move(socket)),
         m_db(db)
     {
-        std::cout << "new session" << std::endl;
     }
 
     ~Session()
     {
-        std::cout << "delete session" << std::endl;
     }
 
     bool                             close_{};
@@ -99,6 +97,7 @@ Response serverError(std::shared_ptr<Session> session, beast::string_view what)
 
 Response deleteComicResponse(std::shared_ptr<Session> session, int id)
 {
+    std::cout << "Delete comic " << id << '\n';
     deleteComic(session->m_db, id);
     Response res{http::status::ok, session->req_.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
@@ -111,6 +110,7 @@ Response deleteComicResponse(std::shared_ptr<Session> session, int id)
 
 Response readComicResponse(std::shared_ptr<Session> session, int id)
 {
+    std::cout << "Read comic " << id << '\n';
     Comics::Comic comic = Comics::readComic(session->m_db, id);
     Response      res{http::status::ok, session->req_.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
@@ -123,7 +123,9 @@ Response readComicResponse(std::shared_ptr<Session> session, int id)
 
 Response createComicResponse(std::shared_ptr<Session> session)
 {
-    Comics::Comic comic = Comics::fromJson(session->req_.body());
+    const std::string json = session->req_.body();
+    std::cout << "Create comic: " << json << '\n';
+    Comics::Comic comic = Comics::fromJson(json);
     Response      res{http::status::ok, session->req_.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "application/json");
@@ -135,7 +137,9 @@ Response createComicResponse(std::shared_ptr<Session> session)
 
 Response updateComicResponse(std::shared_ptr<Session> session, int id)
 {
-    Comics::Comic comic = Comics::fromJson(session->req_.body());
+    const std::string json = session->req_.body();
+    std::cout << "Update comic " << id << " to " << json << '\n';
+    Comics::Comic comic = Comics::fromJson(json);
     updateComic(session->m_db, id, comic);
     Response res{http::status::ok, session->req_.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
@@ -269,7 +273,6 @@ void handleSession(std::shared_ptr<Session> session)
     promise::doWhile(
         [=](promise::DeferLoop &loop)
         {
-            std::cout << "read new http request ... " << std::endl;
             //<1> Read a request
             session->req_ = {};
             promise::async_read(session->socket_, session->buffer_, session->req_)
@@ -302,7 +305,6 @@ void handleSession(std::shared_ptr<Session> session)
                         }
                         else
                         {
-                            std::cout << "shutdown..." << std::endl;
                             session->socket_.shutdown(tcp::socket::shutdown_send, err);
                             loop.doBreak(); // break from doWhile
                         }
@@ -345,7 +347,6 @@ static int listenForConnections(asio::io_context &ioc, tcp::endpoint endpoint, C
                 .then(
                     [&](std::shared_ptr<tcp::socket> socket)
                     {
-                        std::cout << "accepted" << std::endl;
                         auto session = std::make_shared<Session>(*socket, db);
                         handleSession(session);
                     })
