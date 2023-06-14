@@ -30,7 +30,7 @@ namespace comicsServer
 struct Session
 {
     explicit Session(tcp::socket &socket, Comics::ComicDb &db) :
-        socket_(std::move(socket)),
+        m_socket(std::move(socket)),
         m_db(db)
     {
     }
@@ -39,11 +39,11 @@ struct Session
     {
     }
 
-    bool                             close_{};
-    tcp::socket                      socket_;
-    beast::flat_buffer               buffer_;
+    bool                             m_close{};
+    tcp::socket                      m_socket;
+    beast::flat_buffer               m_buffer;
     Comics::ComicDb                 &m_db;
-    http::request<http::string_body> req_;
+    http::request<http::string_body> m_req;
 };
 
 // Promisified functions
@@ -62,10 +62,10 @@ static promise::Promise asyncAccept(tcp::acceptor &acceptor)
 // Returns a bad request response
 Response badRequest(std::shared_ptr<Session> session, beast::string_view why)
 {
-    http::response<http::string_body> res{http::status::bad_request, session->req_.version()};
+    http::response<http::string_body> res{http::status::bad_request, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/html");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = why;
     res.prepare_payload();
     return res;
@@ -74,11 +74,11 @@ Response badRequest(std::shared_ptr<Session> session, beast::string_view why)
 // Returns a not found response
 Response notFound(std::shared_ptr<Session> session)
 {
-    http::response<http::string_body> res{http::status::not_found, session->req_.version()};
+    http::response<http::string_body> res{http::status::not_found, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/html");
-    res.keep_alive(session->req_.keep_alive());
-    res.body() = "The resource '" + std::string{session->req_.target()} + "' was not found.";
+    res.keep_alive(session->m_req.keep_alive());
+    res.body() = "The resource '" + std::string{session->m_req.target()} + "' was not found.";
     res.prepare_payload();
     return res;
 };
@@ -86,10 +86,10 @@ Response notFound(std::shared_ptr<Session> session)
 // Returns a server error response
 Response serverError(std::shared_ptr<Session> session, beast::string_view what)
 {
-    http::response<http::string_body> res{http::status::internal_server_error, session->req_.version()};
+    http::response<http::string_body> res{http::status::internal_server_error, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/html");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = "An error occurred: '" + std::string{what} + "'";
     res.prepare_payload();
     return res;
@@ -99,10 +99,10 @@ Response deleteComicResponse(std::shared_ptr<Session> session, int id)
 {
     std::cout << "Delete comic " << id << '\n';
     deleteComic(session->m_db, id);
-    Response res{http::status::ok, session->req_.version()};
+    Response res{http::status::ok, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "text/plain");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = "Comic " + std::to_string(id) + " deleted.";
     res.prepare_payload();
     return res;
@@ -112,10 +112,10 @@ Response readComicResponse(std::shared_ptr<Session> session, int id)
 {
     std::cout << "Read comic " << id << '\n';
     Comics::Comic comic = Comics::readComic(session->m_db, id);
-    Response      res{http::status::ok, session->req_.version()};
+    Response      res{http::status::ok, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "application/json");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = toJson(comic);
     res.prepare_payload();
     return res;
@@ -123,13 +123,13 @@ Response readComicResponse(std::shared_ptr<Session> session, int id)
 
 Response createComicResponse(std::shared_ptr<Session> session)
 {
-    const std::string json = session->req_.body();
+    const std::string json = session->m_req.body();
     std::cout << "Create comic: " << json << '\n';
     Comics::Comic comic = Comics::fromJson(json);
-    Response      res{http::status::ok, session->req_.version()};
+    Response      res{http::status::ok, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "application/json");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = toJson(comic);
     res.prepare_payload();
     return res;
@@ -137,14 +137,14 @@ Response createComicResponse(std::shared_ptr<Session> session)
 
 Response updateComicResponse(std::shared_ptr<Session> session, int id)
 {
-    const std::string json = session->req_.body();
+    const std::string json = session->m_req.body();
     std::cout << "Update comic " << id << " to " << json << '\n';
     Comics::Comic comic = Comics::fromJson(json);
     updateComic(session->m_db, id, comic);
-    Response res{http::status::ok, session->req_.version()};
+    Response res{http::status::ok, session->m_req.version()};
     res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
     res.set(http::field::content_type, "application/json");
-    res.keep_alive(session->req_.keep_alive());
+    res.keep_alive(session->m_req.keep_alive());
     res.body() = toJson(comic);
     res.prepare_payload();
     return res;
@@ -159,7 +159,7 @@ promise::Promise handleRequest(std::shared_ptr<Session> session, Send &&send)
 {
     // Make sure we can handle the method
     bool             requiresId{};
-    const http::verb method = session->req_.method();
+    const http::verb method = session->m_req.method();
     switch (method)
     {
     case http::verb::delete_:
@@ -178,7 +178,7 @@ promise::Promise handleRequest(std::shared_ptr<Session> session, Send &&send)
     if (requiresId)
     {
         static const std::regex matchesId("^/comic/([0-9]+)$");
-        const std::string       path{session->req_.target()};
+        const std::string       path{session->m_req.target()};
         std::smatch             parts;
         if (!std::regex_match(path, parts, matchesId))
         {
@@ -240,8 +240,8 @@ template <class Stream>
 struct SendLambda
 {
     explicit SendLambda(Stream &stream, bool &close) :
-        stream_(stream),
-        close_(close)
+        m_stream(stream),
+        m_close(close)
     {
     }
 
@@ -249,12 +249,12 @@ struct SendLambda
     promise::Promise operator()(http::message<isRequest, Body, Fields> &&msg) const
     {
         // Determine if we should close the connection after
-        close_ = msg.need_eof();
+        m_close = msg.need_eof();
         // The lifetime of the message has to extend
         // for the duration of the async operation so
         // we use a shared_ptr to manage it.
         auto sp = std::make_shared<http::message<isRequest, Body, Fields>>(std::move(msg));
-        return promise::async_write(stream_, *sp)
+        return promise::async_write(m_stream, *sp)
             .finally(
                 [sp]()
                 {
@@ -263,8 +263,8 @@ struct SendLambda
     }
 
 private:
-    Stream &stream_;
-    bool   &close_;
+    Stream &m_stream;
+    bool   &m_close;
 };
 
 // Handles an HTTP server connection
@@ -274,14 +274,14 @@ void handleSession(std::shared_ptr<Session> session)
         [=](promise::DeferLoop &loop)
         {
             //<1> Read a request
-            session->req_ = {};
-            promise::async_read(session->socket_, session->buffer_, session->req_)
+            session->m_req = {};
+            promise::async_read(session->m_socket, session->m_buffer, session->m_req)
                 .then(
                     [=]()
                     {
                         //<2> Send the response
                         // This lambda is used to send messages
-                        SendLambda<tcp::socket> lambda{session->socket_, session->close_};
+                        SendLambda<tcp::socket> lambda{session->m_socket, session->m_close};
                         return handleRequest(session, lambda);
                     })
                 .then(
@@ -299,13 +299,13 @@ void handleSession(std::shared_ptr<Session> session)
                     [=](boost::system::error_code &err)
                     {
                         //<4> Keep-alive or close the connection.
-                        if (!err && !session->close_)
+                        if (!err && !session->m_close)
                         {
                             loop.doContinue(); // continue doWhile ...
                         }
                         else
                         {
-                            session->socket_.shutdown(tcp::socket::shutdown_send, err);
+                            session->m_socket.shutdown(tcp::socket::shutdown_send, err);
                             loop.doBreak(); // break from doWhile
                         }
                     });
