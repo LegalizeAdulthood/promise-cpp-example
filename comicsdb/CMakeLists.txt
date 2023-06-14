@@ -1,5 +1,3 @@
-find_package(RapidJSON CONFIG REQUIRED)
-
 # Application logic
 add_library(comicsdb
   comicsdb.h
@@ -11,3 +9,4 @@ add_library(comicsdb
 )
 target_include_directories(comicsdb PUBLIC .)
 target_link_libraries(comicsdb PUBLIC rapidjson)
+set_target_properties(comicsdb PROPERTIES FOLDER Comics)

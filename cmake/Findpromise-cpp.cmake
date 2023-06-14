@@ -8,7 +8,7 @@ find_path(PROMISE_CPP_INCLUDE_DIRS "promise-cpp/promise.hpp")
 if(PROMISE_CPP_INCLUDE_DIRS)
     add_library(promise-cpp INTERFACE)
     target_include_directories(promise-cpp INTERFACE ${PROMISE_CPP_INCLUDE_DIRS})
-    target_compile_definitions(promise-cpp INTERFACE PROMISE_HEADERONLY)
+    target_compile_definitions(promise-cpp INTERFACE PROMISE_HEADONLY)
 endif()
 
 find_package_handle_standard_args(promise-cpp
