@@ -287,7 +287,7 @@ struct send_lambda
         // we use a shared_ptr to manage it.
         auto sp = std::make_shared<http::message<isRequest, Body, Fields>>(std::move(msg));
         return async_write(stream_, *sp).finally([sp]() {
-            //sp will be deleted util finally() called
+            //sp will not be deleted util finally() called
         });
     }
 };
