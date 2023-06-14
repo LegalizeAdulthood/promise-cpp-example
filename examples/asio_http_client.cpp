@@ -210,7 +210,7 @@ int main(int argc, char** argv) {
     .then([&]() {
         return download(ioc, "http://baidu.com/");
     }).then([&]() {
-        return download(ioc, "http://qq.com");
+        return download(ioc, "http://qq.com/");
     }).then([&]() {
         return download(ioc, "http://github.com/xhawk18");
     });
