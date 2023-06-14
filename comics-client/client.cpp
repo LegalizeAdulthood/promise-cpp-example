@@ -7,6 +7,7 @@
 
 #include <cstdlib>
 #include <iostream>
+#include <map>
 
 namespace asio = boost::asio;
 namespace beast = boost::beast;
@@ -23,53 +24,54 @@ struct Session : std::enable_shared_from_this<Session>
 {
     explicit Session(const std::string &server, asio::io_context &ioc, Comics::ComicDb &db) :
         m_server(server),
-        resolver_(ioc),
-        socket_(ioc),
+        m_resolver(ioc),
+        m_socket(ioc),
         m_db(db)
     {
     }
 
-    promise::Promise readComic(int id);
-    promise::Promise updateComic(int id);
+    promise::Promise readRemoteComic(int id);
+    promise::Promise updateRemoteComic(int localId);
 
     std::string                       m_server;
-    tcp::resolver                     resolver_;
-    tcp::socket                       socket_;
-    beast::flat_buffer                buffer_;
-    http::request<http::string_body>  req_;
-    http::response<http::string_body> res_;
+    tcp::resolver                     m_resolver;
+    tcp::socket                       m_socket;
+    beast::flat_buffer                m_buffer;
+    http::request<http::string_body>  m_req;
+    http::response<http::string_body> m_res;
     Comics::ComicDb                  &m_db;
+    int                               m_id{-1};
+    std::map<int, int>                m_remoteIds;
 };
 
 promise::Promise sendRequest(std::shared_ptr<Session> session, const std::string &host, const std::string &port)
 {
     //<1> Resolve the host
-    return promise::async_resolve(session->resolver_, host, port)
+    return promise::async_resolve(session->m_resolver, host, port)
         .then(
             [=](tcp::resolver::results_type &results)
             {
                 //<2> Connect to the host
-                return promise::async_connect(session->socket_, results);
+                return promise::async_connect(session->m_socket, results);
             })
         .then(
             [=]()
             {
                 //<3> Write the request
-                return promise::async_write(session->socket_, session->req_);
+                return promise::async_write(session->m_socket, session->m_req);
             })
         .then(
             [=](size_t bytes_transferred)
             {
                 boost::ignore_unused(bytes_transferred);
                 //<4> Read the response
-                return promise::async_read(session->socket_, session->buffer_, session->res_);
+                return promise::async_read(session->m_socket, session->m_buffer, session->m_res);
             })
         .then(
             [=](size_t bytes_transferred)
             {
                 boost::ignore_unused(bytes_transferred);
-                //<5> Write the message to standard out
-                std::cout << session->res_ << std::endl;
+                //<5> Response is in m_res
             })
         .then(
             []()
@@ -86,7 +88,7 @@ promise::Promise sendRequest(std::shared_ptr<Session> session, const std::string
             [=](boost::system::error_code &err)
             {
                 //<7> Gracefully close the socket
-                session->socket_.shutdown(tcp::socket::shutdown_both, err);
+                session->m_socket.shutdown(tcp::socket::shutdown_both, err);
             });
 }
 
@@ -94,43 +96,40 @@ promise::Promise getRequest(std::shared_ptr<Session> session, std::string const 
                             std::string const &target, int version)
 {
     // Set up an HTTP GET request message
-    session->req_ = {};
-    session->req_.version(version);
-    session->req_.method(http::verb::get);
-    session->req_.target(target);
-    session->req_.set(http::field::host, host);
-    session->req_.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+    session->m_req = {};
+    session->m_req.version(version);
+    session->m_req.method(http::verb::get);
+    session->m_req.target(target);
+    session->m_req.set(http::field::host, host);
+    session->m_req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
     return sendRequest(session, host, port);
 }
 
-promise::Promise Session::readComic(int id)
+promise::Promise Session::readRemoteComic(int id)
 {
-    return getRequest(shared_from_this(), m_server, "8000", "/comic/" + std::to_string(id), 10)
-        .then(
-            [=]()
-            {
-                m_db.resize(id);
-                m_db[id] = Comics::fromJson(beast::buffers_to_string(buffer_.cdata()));
-            });
+    return getRequest(shared_from_this(), m_server, "8000", "/comic/" + std::to_string(id), 10);
 }
 
 promise::Promise putRequest(std::shared_ptr<Session> session, std::string const &host, std::string const &port,
-                            std::string const &target, int version, const std::string &body)
+                            std::string const &target, int version, int localId)
 {
     // Set up an HTTP PUT request message
-    session->req_ = {};
-    session->req_.version(version);
-    session->req_.method(http::verb::put);
-    session->req_.target(target);
-    session->req_.set(http::field::host, host);
-    session->req_.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-    session->req_.body() = body;
+    session->m_req = {};
+    session->m_req.version(version);
+    session->m_req.method(http::verb::put);
+    session->m_req.target(target);
+    session->m_req.set(http::field::host, host);
+    session->m_req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
+    session->m_req.set(http::field::content_type, "application/json");
+    session->m_req.body() = toJson(session->m_db[localId]);
+    session->m_req.prepare_payload();
     return sendRequest(session, host, port);
 }
 
-promise::Promise Session::updateComic(int id)
+promise::Promise Session::updateRemoteComic(int localId)
 {
-    return putRequest(shared_from_this(), m_server, "8000", "/comic/" + std::to_string(id), 10, toJson(m_db[id]));
+    int remoteId = m_remoteIds[localId];
+    return putRequest(shared_from_this(), m_server, "8000", "/comic/" + std::to_string(remoteId), 10, localId);
 }
 
 static int run(int argc, char *argv[])
@@ -146,20 +145,23 @@ static int run(int argc, char *argv[])
     Comics::ComicDb   db;
     auto              session = std::make_shared<Session>(server, ioc, db);
 
-    // establish http session with server
-    session->readComic(0)
+    session->readRemoteComic(0)
         .then(
-            [=]()
+            [=]
             {
-                Comics::Comic comic = session->m_db[0];
-                comic.letters = Comics::findPerson("Brad Templeton");
-                updateComic(session->m_db, 0, comic);
+                session->m_id = createComic(session->m_db, Comics::fromJson(session->m_res.body()));
+                session->m_remoteIds.emplace(session->m_id, 0);
+                Comics::Comic comic = readComic(session->m_db, session->m_id);
+                comic.pencils = Comics::findPerson("Steve Ditko");
+                updateComic(session->m_db, session->m_id, comic);
             })
-        .then(session->updateComic(0))
         .then(
-            [=]() {
-                std::cout << "Updated comic 0 response: " << beast::buffers_to_string(session->buffer_.cdata()) << '\n';
-            });
+            [=]
+            {
+                std::cout << "Updated local comic: " << toJson(session->m_db[session->m_id]) << '\n';
+                return session->updateRemoteComic(session->m_id);
+            })
+        .then([] { std::cout << "Remote comic updated\n"; });
 
     ioc.run();
 
